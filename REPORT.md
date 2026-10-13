@@ -17,7 +17,25 @@ Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 <điền>
 
 ### Câu 2 — E0: `parse_valid_rate` bằng bao nhiêu, và hai lỗi phổ biến nhất của model gốc là gì (kèm một ví dụ output thô)?
-<điền>
+
+**`parse_valid_rate` = 0,929**: 289/311 output đọc được, 22 ảnh JSON hỏng. Model gốc tuân thủ định dạng khá tốt: không bọc ```json, không có chữ thừa, không có nhãn ngoài 3 lớp. Nhưng nội dung thì sai: F1 = **0,086** (CI95 0,060–0,114), P = 0,111, R = 0,070. Model dự đoán 370 box, chỉ **41 TP** so với 583 box thật (329 FP, 542 FN).
+
+Tôi đã loại trừ lỗi **sai thang**: toạ độ dự đoán nằm trong x ∈ [0, 1000], y ∈ [276, 1000] (y vượt 360, nên không phải pixel). Chấm lại với `--coord pixel` thì F1 rơi về 0,000, còn với `norm1000` là 0,086. Vậy model gốc **đã dùng đúng thang 0–1000**.
+
+**Lỗi 1: bỏ sót vật thể (recall 0,070).** 110/311 ảnh có ít box hơn nhãn, 5 ảnh trả `[]` dù có hư hại. Thường model chỉ trả **một box** cho cả ảnh. Ví dụ `vlcsnap-00200`:
+```
+GT : [{"label":"crack","bbox_2d":[352,642,534,728]},{"label":"manhole","bbox_2d":[894,756,1000,847]}]
+raw: [{"label": "crack", "bbox_2d": [750, 638, 850, 684]}]
+```
+Nắp cống bị bỏ qua hoàn toàn, còn box crack nằm sai chỗ (IoU = 0).
+
+**Lỗi 2: box sai kích thước so với quy ước gán nhãn (IoU < 0,5 dù tìm đúng chỗ).** Lỗi này có hai dạng ngược nhau:
+- *Crack: box khổng lồ phủ cả mặt đường.* `vlcsnap-00203` dự đoán `[0, 476, 1000, 999]` (rộng 1000 × cao 523) cho một vết nứt có nhãn `[322,631,759,775]` (437 × 144), IoU = 0,12. Crack chiếm 244/370 box dự đoán nhưng F1 crack chỉ 0,026: model coi "mặt đường nứt" là một vùng lớn, còn người gán nhãn chia vết nứt thành từng đoạn.
+- *Manhole: đúng vị trí nhưng box quá dẹt.* `vlcsnap-00202` dự đoán `[309, 684, 399, 714]`, nhãn là `[275,672,405,722]`: chiều cao 30 so với 50, IoU = **0,415**. Ở `vlcsnap-00204`, chiều cao 30 so với 56, IoU = 0,347. Model nhận ra nắp cống (F1 manhole 0,193, cao nhất trong 3 lớp) nhưng vẽ box sát hơn quy ước của bộ nhãn, nên trượt ngưỡng IoU 0,5.
+
+**Về 22 JSON hỏng.** Cả 22 đều **bị cắt giữa chừng** (chưa đóng `]`). Ô phân tích cũng đếm được 20 ảnh **lặp lại cùng một box**. Model rơi vào vòng lặp sinh mãi một box cho đến khi chạm `max_new_tokens` = 256. Trong khi đó, đáp án đúng dài nhất trên test chỉ 196 token, nên đây là lỗi của model chứ không phải do giới hạn quá chặt.
+
+**Kết luận.** Model gốc *biết* hư hại nằm ở nửa dưới ảnh (y ≥ 276) và nhận ra được nắp cống. Nhưng nó không biết **quy ước của bộ nhãn này**: liệt kê từng vật thể, chia vết nứt thành đoạn, box ôm rộng bao nhiêu. Đó đúng là thứ finetune cần dạy. Mốc để so sánh: E1 phải đạt F1 ≥ 0,186.
 
 ### Câu 3 — Thang 0–1000: nếu chấm output theo pixel (hoặc ngược lại) thì F1 ra sao và vì sao? Bạn đã kiểm chứng điều này thế nào?
 
