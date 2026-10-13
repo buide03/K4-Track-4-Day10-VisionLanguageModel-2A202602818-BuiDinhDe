@@ -57,7 +57,24 @@ Cùng một bộ box đúng tuyệt đối, chỉ cần đọc sai thang là F1 
 **Vì sao Qwen3-VL dùng 0–1000 chứ không dùng pixel.** Qwen3-VL đổi kích thước ảnh động trước khi đưa vào ViT (patch 16 px, gộp 2×2), nên "pixel" mà model nhìn thấy phụ thuộc độ phân giải đầu vào. Toạ độ tương đối 0–1000 thì không đổi dù ảnh 640×360 hay 1920×1080. Ngoài ra, dữ liệu grounding lúc tiền huấn luyện dùng thang này, nên giữ đúng thang là tận dụng được kiến thức sẵn có của model thay vì bắt model học lại.
 
 ### Câu 4 — Mask loss: vì sao chỉ tính loss trên phần trả lời? Điều gì xảy ra nếu tính trên cả prompt và token ảnh?
-<điền>
+
+**Cách tôi mask.** Mỗi ví dụ là một hội thoại `user: [ảnh] + PROMPT` → `assistant: JSON`. Tôi mã hoá hai lần bằng `apply_chat_template`: một lần chỉ có phần user (kèm `add_generation_prompt=True`), một lần có cả câu trả lời. Sau đó tôi kiểm tra chuỗi đầu là **tiền tố** của chuỗi sau, rồi gán `labels = -100` cho toàn bộ tiền tố. Ký tự `\n` sau `<|im_end|>` cũng được gán -100, vì model dừng ngay ở `<|im_end|>`. Phần đệm trong batch cũng có `labels = -100`.
+
+**Kiểm chứng trên dữ liệu của tôi:**
+- Ảnh 640×360 cho đúng **220** token `<|image_pad|>`.
+- Giải mã riêng các token có `labels != -100` ra đúng `[{"label":"crack","bbox_2d":[430,467,583,506]},…]<|im_end|>`, khớp từng ký tự với `objects_to_answer` cộng `<|im_end|>`.
+- Ví dụ đầu tiên dài 609 token: prompt 359 (220 ảnh + 139 chữ), câu trả lời 249, 1 token đuôi.
+
+**Tỉ lệ token.** Trên 1.422 ảnh train, prompt **luôn dài 359 token** (cùng kích thước ảnh, cùng câu hỏi). Câu trả lời trung bình chỉ **70 token** (dài nhất 366), chuỗi trung bình 430 token. Như vậy loss chỉ tính trên trung bình **16,3%** số token. Nếu không mask, khoảng **84%** số token đóng góp vào loss là những thứ không cần học.
+
+**Vì sao chỉ tính loss trên câu trả lời.** Khi suy luận, model chỉ *sinh* phần sau `<|im_start|>assistant`. Prompt và ảnh luôn là *đầu vào* có sẵn, không bao giờ phải sinh. Vì vậy mục tiêu học phải là P(câu trả lời | ảnh, prompt), không phải xác suất của cả chuỗi.
+
+**Nếu tính loss trên cả prompt và token ảnh thì sao:**
+1. *Tín hiệu bị pha loãng.* Loss là trung bình trên mọi token có nhãn. Khi 84% token là prompt, phần trả lời chỉ chiếm khoảng 16% trọng số của gradient. Cùng lr và 300 bước, model học nhiệm vụ thật chậm hơn nhiều.
+2. *Loss "giảm đẹp" nhưng vô nghĩa.* 139 token chữ của prompt giống hệt nhau ở mọi ví dụ, nên model thuộc lòng rất nhanh. Còn 220 token ảnh thì nhãn luôn là `<|image_pad|>`, đoán đúng là việc tầm thường. Đường loss giảm nhanh, tạo cảm giác model đang học, trong khi F1 grounding hầu như không đổi. Đây là kiểu lỗi đánh lừa người theo dõi loss.
+3. *Học sai hành vi.* Model bị dạy để "viết tiếp" phần câu hỏi và chuỗi `<|image_pad|>`, vốn là các vị trí mà đặc trưng ảnh được chèn vào thay cho embedding chữ. Điều này làm nhiễu đúng phần LLM đọc ảnh, và có thể khiến model sinh ra văn bản kiểu prompt thay vì JSON.
+
+**Vì sao phải giữ `<|im_end|>` trong phần có loss.** Ở E0, 22/311 output bị cắt vì model lặp một box đến khi chạm 256 token. Học token `<|im_end|>` ngay sau dấu `]` là cách dạy model **dừng đúng lúc**. Đây là điều tôi kỳ vọng thấy qua `parse_valid_rate` của E1 (rubric yêu cầu ≥ 0,95).
 
 ### Câu 5 — Vì sao không thể huấn luyện đầy đủ projector nếu ViT bị lượng tử hoá 4-bit, và bạn đã xử lý thế nào? Vì sao projector phải ở float32?
 <điền>
