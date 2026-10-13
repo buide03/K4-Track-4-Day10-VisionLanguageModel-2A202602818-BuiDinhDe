@@ -20,7 +20,23 @@ Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 <điền>
 
 ### Câu 3 — Thang 0–1000: nếu chấm output theo pixel (hoặc ngược lại) thì F1 ra sao và vì sao? Bạn đã kiểm chứng điều này thế nào?
-<điền>
+
+**Kiểm chứng.** Tôi tạo "đáp án hoàn hảo" từ chính nhãn test (311 ảnh, 583 box) theo hai thang, rồi chấm bằng `scripts/score.py` (hàm `evaluate`) với cả hai giá trị `--coord`:
+
+| Nhãn sinh theo | Chấm với `--coord` | F1 | mean IoU | FP/ảnh |
+|---|---|---|---|---|
+| norm1000 | norm1000 | **1,000** | 0,988 | 0,00 |
+| pixel | pixel | **1,000** | 1,000 | 0,00 |
+| norm1000 | pixel | **0,000** | 0,000 | 1,87 |
+| pixel | norm1000 | **0,000** | 0,000 | 1,87 |
+
+Cùng một bộ box đúng tuyệt đối, chỉ cần đọc sai thang là F1 rơi từ 1,0 xuống **0**. Cả 583 box thành FP (583/311 = 1,87 FP/ảnh), và cả 583 box thật thành FN.
+
+**Vì sao.** Khi đáp án ở thang 0–1000 bị đọc như pixel, trọng tài chia x cho 640 và y cho 360 rồi nhân 1000. Kết quả là box bị **kéo giãn và đẩy xa gốc toạ độ**: ×1,56 theo chiều ngang, ×2,78 theo chiều dọc. Box thật ở giữa ảnh, khoảng y = 500, bị đẩy ra ngoài khung (y ≈ 1390). Box dự đoán và box thật không còn chồng nhau, IoU = 0 < 0,5, nên không có TP nào. Chiều ngược lại cũng vậy: box bị co về phía góc trên trái. Lỗi này nguy hiểm vì JSON vẫn **hợp lệ** (`parse_valid_rate` = 1), chỉ F1 sụp. Nhìn riêng độ hợp lệ của output sẽ không phát hiện ra.
+
+**Round-trip.** Tôi đổi nhãn YOLO → JSON 0–1000 → `parse_output` của trọng tài → pixel trên toàn bộ 4.737 box. Sai số lớn nhất là **0,32 px**, đúng bằng sai số làm tròn lý thuyết 640/1000/2. Vẽ chồng lên ảnh (`report/figures/cp2_roundtrip.jpg`) thấy box quy ngược khít với box gốc. Mean IoU 0,988 (thay vì 1,0) cho thấy nhãn gốc được vẽ trên lưới pixel nguyên, và làm tròn sang lưới 0–1000 làm lệch nhẹ các box nhỏ. Mức lệch này vẫn xa ngưỡng 0,5.
+
+**Vì sao Qwen3-VL dùng 0–1000 chứ không dùng pixel.** Qwen3-VL đổi kích thước ảnh động trước khi đưa vào ViT (patch 16 px, gộp 2×2), nên "pixel" mà model nhìn thấy phụ thuộc độ phân giải đầu vào. Toạ độ tương đối 0–1000 thì không đổi dù ảnh 640×360 hay 1920×1080. Ngoài ra, dữ liệu grounding lúc tiền huấn luyện dùng thang này, nên giữ đúng thang là tận dụng được kiến thức sẵn có của model thay vì bắt model học lại.
 
 ### Câu 4 — Mask loss: vì sao chỉ tính loss trên phần trả lời? Điều gì xảy ra nếu tính trên cả prompt và token ảnh?
 <điền>
