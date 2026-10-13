@@ -14,7 +14,33 @@ Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 ## 10 câu hỏi (trả lời bằng **số của bạn**, không chép lại tài liệu)
 
 ### Câu 1 — Kiến trúc: ViT, projector và LLM của Qwen3-VL-4B có bao nhiêu tham số mỗi khối, và E1/E2/E3 mỗi cái cập nhật khối nào?
-<điền>
+
+**Đường đi của ảnh.** Ảnh 640×360 được cắt thành patch 16×16 và đi qua ViT gồm 24 block (hidden 1024). Projector gộp 2×2 patch thành 1 token và chiếu sang không gian 2560 chiều của LLM, nên ảnh còn **220 token**. Ngoài `visual.merger` ở đầu ra cuối, Qwen3-VL còn có **DeepStack**: 3 `deepstack_merger_list` lấy đặc trưng ở block 5, 11, 17 của ViT và bơm thẳng vào các lớp đầu của LLM. LLM có 36 layer (32 head Q, 8 head KV, MLP 9728).
+
+**Số tham số từng khối.** Tôi đếm trên model dựng từ config gốc, ở meta device, bằng `named_parameters()`:
+
+| Khối | Tham số | Tỉ lệ |
+|---|---|---|
+| ViT: patch_embed + pos_embed + 24 block | 306,2M | 6,90% |
+| Projector: `visual.merger` | 27,3M | 0,61% |
+| Projector: `visual.deepstack_merger_list` (3 cái) | 81,8M | 1,84% |
+| LLM: `embed_tokens` (dùng chung với `lm_head`) | 389,0M | 8,76% |
+| LLM: 36 layer + norm | 3.633,5M | 81,88% |
+| **Tổng** | **4.437,8M** | |
+
+Như vậy ViT kể cả projector là 415,3M, LLM kể cả embedding là 4.022,5M. `lm_head` không tốn thêm tham số vì `tie_word_embeddings = True`.
+
+**Mỗi setup cập nhật khối nào.** Mọi setup đều đóng băng toàn bộ trọng số gốc. LLM ở dạng NF4 4-bit; ViT, projector và `lm_head` ở fp16.
+
+| Setup | ViT | Projector | LLM | Module LoRA | Tham số huấn luyện |
+|---|---|---|---|---|---|
+| E1 | đóng băng | đóng băng | LoRA r=16 trên q,k,v,o,gate,up,down | 252 | **33,03M** (0,74%) |
+| E2 | đóng băng | **huấn luyện đầy đủ**, fp32 | LoRA như E1 | 252 | **142,14M** (3,20%) = 33,03M + 109,11M |
+| E3 | **LoRA** trên attn.qkv, attn.proj, mlp.linear_fc1/2 của 24 block | huấn luyện đầy đủ, fp32 | LoRA như E1 | 348 | **148,43M** (3,34%) = 33,03M + 6,29M + 109,11M |
+
+Một chi tiết tôi phải xử lý: `merger` và `deepstack_merger_list` cũng có lớp tên `linear_fc1`/`linear_fc2`. Vì vậy biểu thức chọn module LoRA của ViT phải giới hạn trong `model.visual.blocks.N.`; nếu không, LoRA sẽ bị gắn nhầm vào projector. Kiểm chứng: số module khớp 252/252/348, và E2 − E1 = 109,1M, đúng bằng số tham số projector.
+
+Điều đáng chú ý là projector rất nhỏ (2,5% model) nhưng ở E2 lại chiếm **77%** số tham số huấn luyện, vì nó được mở toàn bộ, trong khi LLM 4B chỉ thêm 33M tham số LoRA.
 
 ### Câu 2 — E0: `parse_valid_rate` bằng bao nhiêu, và hai lỗi phổ biến nhất của model gốc là gì (kèm một ví dụ output thô)?
 
