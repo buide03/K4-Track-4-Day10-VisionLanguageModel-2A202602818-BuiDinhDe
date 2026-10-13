@@ -1,4 +1,4 @@
-Họ tên: <điền họ tên>
+Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 `dataset_version`: <điền, lấy từ data/splits/meta.json>
 
 ## Bảng tổng hợp (số của bạn, lấy từ `report/evidence/*.json`)
