@@ -1,0 +1,35 @@
+18:59:10 [E1] E1: 252 module LoRA (r=16), 33.03M tham số huấn luyện, lr=0.0002, batch 2×4, 300 bước
+18:59:20 [E1] bước   1/300 | loss 1.5301 | lr 1.33e-05 | grad 5.28 | 0.2 phút, còn ≈ 52 | VRAM đỉnh 6.16 GB
+19:00:53 [E1] bước  10/300 | loss 1.1934 | lr 1.33e-04 | grad 0.46 | 1.7 phút, còn ≈ 50 | VRAM đỉnh 6.31 GB
+19:02:36 [E1] bước  20/300 | loss 0.7792 | lr 2.00e-04 | grad 0.82 | 3.4 phút, còn ≈ 48 | VRAM đỉnh 6.78 GB
+19:04:17 [E1] bước  30/300 | loss 0.7195 | lr 1.99e-04 | grad 0.64 | 5.1 phút, còn ≈ 46 | VRAM đỉnh 6.78 GB
+19:06:00 [E1] bước  40/300 | loss 0.6613 | lr 1.96e-04 | grad 0.40 | 6.8 phút, còn ≈ 44 | VRAM đỉnh 6.88 GB
+19:07:40 [E1] bước  50/300 | loss 0.6507 | lr 1.93e-04 | grad 0.59 | 8.5 phút, còn ≈ 43 | VRAM đỉnh 6.88 GB
+19:09:21 [E1] bước  60/300 | loss 0.6645 | lr 1.88e-04 | grad 0.46 | 10.2 phút, còn ≈ 41 | VRAM đỉnh 6.88 GB
+19:11:02 [E1] bước  70/300 | loss 0.6242 | lr 1.82e-04 | grad 0.42 | 11.9 phút, còn ≈ 39 | VRAM đỉnh 6.88 GB
+19:12:43 [E1] bước  80/300 | loss 0.6470 | lr 1.75e-04 | grad 0.42 | 13.6 phút, còn ≈ 37 | VRAM đỉnh 6.88 GB
+19:14:23 [E1] bước  90/300 | loss 0.6165 | lr 1.68e-04 | grad 0.70 | 15.2 phút, còn ≈ 36 | VRAM đỉnh 6.88 GB
+19:16:06 [E1] bước 100/300 | loss 0.6246 | lr 1.59e-04 | grad 0.39 | 16.9 phút, còn ≈ 34 | VRAM đỉnh 6.88 GB
+19:16:13 [E1] đã lưu checkpoint bước 100 → /content/drive/MyDrive/lab10_2A202602818/runs/E1
+19:17:54 [E1] bước 110/300 | loss 0.6056 | lr 1.50e-04 | grad 0.36 | 18.7 phút, còn ≈ 32 | VRAM đỉnh 6.88 GB
+19:19:36 [E1] bước 120/300 | loss 0.6390 | lr 1.40e-04 | grad 0.44 | 20.4 phút, còn ≈ 31 | VRAM đỉnh 6.88 GB
+19:21:15 [E1] bước 130/300 | loss 0.6291 | lr 1.30e-04 | grad 0.41 | 22.1 phút, còn ≈ 29 | VRAM đỉnh 6.88 GB
+19:22:57 [E1] bước 140/300 | loss 0.6323 | lr 1.19e-04 | grad 0.40 | 23.8 phút, còn ≈ 27 | VRAM đỉnh 6.88 GB
+19:24:38 [E1] bước 150/300 | loss 0.6370 | lr 1.08e-04 | grad 0.28 | 25.5 phút, còn ≈ 25 | VRAM đỉnh 6.88 GB
+19:26:18 [E1] bước 160/300 | loss 0.6585 | lr 9.72e-05 | grad 0.35 | 27.1 phút, còn ≈ 24 | VRAM đỉnh 6.88 GB
+19:28:01 [E1] bước 170/300 | loss 0.5913 | lr 8.63e-05 | grad 0.36 | 28.8 phút, còn ≈ 22 | VRAM đỉnh 6.88 GB
+19:29:40 [E1] bước 180/300 | loss 0.6013 | lr 7.55e-05 | grad 0.34 | 30.5 phút, còn ≈ 20 | VRAM đỉnh 6.88 GB
+19:31:20 [E1] bước 190/300 | loss 0.6081 | lr 6.49e-05 | grad 0.47 | 32.2 phút, còn ≈ 19 | VRAM đỉnh 6.88 GB
+19:33:01 [E1] bước 200/300 | loss 0.5914 | lr 5.48e-05 | grad 0.37 | 33.9 phút, còn ≈ 17 | VRAM đỉnh 6.88 GB
+19:33:05 [E1] đã lưu checkpoint bước 200 → /content/drive/MyDrive/lab10_2A202602818/runs/E1
+19:34:48 [E1] bước 210/300 | loss 0.5996 | lr 4.53e-05 | grad 0.38 | 35.6 phút, còn ≈ 15 | VRAM đỉnh 6.88 GB
+19:36:27 [E1] bước 220/300 | loss 0.5956 | lr 3.64e-05 | grad 0.39 | 37.3 phút, còn ≈ 14 | VRAM đỉnh 6.88 GB
+19:38:06 [E1] bước 230/300 | loss 0.5970 | lr 2.83e-05 | grad 0.42 | 38.9 phút, còn ≈ 12 | VRAM đỉnh 6.88 GB
+19:39:46 [E1] bước 240/300 | loss 0.5855 | lr 2.11e-05 | grad 0.39 | 40.6 phút, còn ≈ 10 | VRAM đỉnh 6.88 GB
+19:41:27 [E1] bước 250/300 | loss 0.5766 | lr 1.48e-05 | grad 0.50 | 42.3 phút, còn ≈ 8 | VRAM đỉnh 6.88 GB
+19:43:10 [E1] bước 260/300 | loss 0.5729 | lr 9.56e-06 | grad 0.38 | 44.0 phút, còn ≈ 7 | VRAM đỉnh 6.88 GB
+19:44:50 [E1] bước 270/300 | loss 0.5839 | lr 5.42e-06 | grad 0.34 | 45.7 phút, còn ≈ 5 | VRAM đỉnh 6.88 GB
+19:46:29 [E1] bước 280/300 | loss 0.5766 | lr 2.42e-06 | grad 0.47 | 47.3 phút, còn ≈ 3 | VRAM đỉnh 6.88 GB
+19:48:09 [E1] bước 290/300 | loss 0.5909 | lr 6.07e-07 | grad 0.42 | 49.0 phút, còn ≈ 2 | VRAM đỉnh 6.88 GB
+19:49:48 [E1] bước 300/300 | loss 0.5545 | lr 0.00e+00 | grad 0.35 | 50.6 phút, còn ≈ 0 | VRAM đỉnh 6.88 GB
+19:49:49 [E1] XONG: 50.6 phút, VRAM đỉnh 6.88 GB, loss đầu 1.1934 → cuối 0.5545
