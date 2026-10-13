@@ -5,7 +5,7 @@ Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 
 | Mã | Setup | Tham số huấn luyện | VRAM đỉnh (GB) | Phút | F1 | CI95 | FP/ảnh | F1 pothole | F1 crack | F1 manhole |
 |---|---|---|---|---|---|---|---|---|---|---|
-| E0 | zero-shot | 0 | | | | | | | | |
+| E0 | zero-shot | 0 | — (suy luận 4,29) | — (suy luận 13,7) | 0,086 | 0,060–0,114 | 1,06 | 0,124 | 0,026 | 0,193 |
 | E1 | LoRA LLM | | | | | | | | | |
 | E2 | + projector | | | | | | | | | |
 | E3 | + LoRA ViT | | | | | | | | | |
