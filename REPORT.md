@@ -141,13 +141,13 @@ Cả ba setup có cùng dữ liệu, cùng 300 bước, batch hiệu dụng 8, l
 | E2 | 0,337 | 0,295–0,380 | 0,346 / 0,329 | 192 / 363 / 391 | 1,17 | 142,1M | 8,60 GB | 51,3 | 0,509 |
 | E3 | **0,442** | **0,398–0,488** | **0,480 / 0,410** | 239 / 259 / 344 | **0,83** | 148,4M | 8,79 GB | 60,4 | 0,458 |
 
-**Mở projector (E1 → E2): có lợi nhưng chưa chắc chắn.** F1 tăng 0,051 (thêm 32 TP), nhưng hai CI95 **chồng nhau** (E2 thấp nhất 0,295 < E1 cao nhất 0,322). Với 311 ảnh test, tôi không khẳng định được projector giúp thật. Cái giá: gấp 4,3 lần số tham số huấn luyện (+109M) và **+1,72 GB VRAM**, nhưng thời gian gần như không đổi (+0,7 phút). Lý do thời gian gần như không đổi: gradient chỉ cần đi qua projector, không phải đi ngược vào ViT.
+**Mở projector (E1 → E2): có lợi, nhưng ít.** F1 tăng 0,052 (thêm 32 TP). Nhìn hai CI95 riêng lẻ thì chúng **chồng nhau** (E2 thấp nhất 0,295 < E1 cao nhất 0,322). Nhưng bootstrap **ghép cặp** trên cùng 311 ảnh cho hiệu ΔF1 = +0,052, CI95 [+0,015, +0,089], P(Δ ≤ 0) = 0,003, nên lợi ích là có thật, dù nhỏ (xem Câu 8). E2 cũng hơn E1 ở **cả 3 phiên quay** test. Cái giá: gấp 4,3 lần số tham số huấn luyện (+109M) và **+1,72 GB VRAM**, nhưng thời gian gần như không đổi (+0,7 phút). Lý do thời gian gần như không đổi: gradient chỉ cần đi qua projector, không phải đi ngược vào ViT.
 
 **Thêm LoRA cho ViT (E2 → E3): đáng nhất.** F1 tăng 0,105, và CI95 **tách hẳn** (E3 thấp nhất 0,398 > E2 cao nhất 0,380). Cùng lúc precision tăng từ 0,346 lên 0,480 và FP/ảnh giảm từ 1,17 xuống 0,83: model vừa tìm được nhiều hơn vừa bịa ít hơn. Cái giá rất nhỏ: +6,3M tham số, +0,19 GB VRAM, và **+9,1 phút (+18%)**. Thời gian tăng vì giờ phải lan truyền ngược qua 24 block của ViT (gradient checkpointing tính lại activation).
 
 **Cách tôi hiểu.** E1 và E2 chỉ thay đổi cách LLM *đọc*, hoặc cách projector *chiếu*, các đặc trưng mà ViT đông cứng đã trích ra. Nếu ViT gốc không giữ đủ chi tiết cho những vật thể chỉ khoảng 30×30 pixel (ổ gà, nắp cống), thì không lớp nào phía sau khôi phục lại được. Chỉ E3 cho phép ViT *thay đổi đặc trưng nó trích ra*. Lớp hưởng lợi nhiều nhất cũng là lớp nhỏ nhất: pothole tăng từ 0,205 lên 0,347 (+69%), so với crack tăng từ 0,272 lên 0,361 và manhole từ 0,600 lên 0,678.
 
-**Kết luận: E3 đáng đồng tiền nhất.** E3 so với E1 cho thêm 0,156 F1 (CI tách hẳn) với giá +1,91 GB VRAM (vẫn chỉ dùng 8,79/15,6 GB của T4) và +10 phút. Hạn chế: mỗi setup chỉ chạy **một seed**, nên tôi chưa đo được độ dao động do huấn luyện; CI95 ở đây chỉ phản ánh dao động do mẫu test.
+**Kết luận: E3 đáng đồng tiền nhất.** E3 so với E1 cho thêm 0,156 F1 (ghép cặp: CI95 [+0,114, +0,200]) với giá +1,91 GB VRAM (vẫn chỉ dùng 8,79/15,6 GB của T4) và +10 phút. Hạn chế: mỗi setup chỉ chạy **một seed**, nên tôi chưa đo được độ dao động do huấn luyện; CI95 ở đây chỉ phản ánh dao động do mẫu test.
 
 ### Câu 8 — Tập test có 311 ảnh: khoảng tin cậy rộng thế nào, và điều đó giới hạn kết luận so sánh các setup ra sao?
 
@@ -164,15 +164,33 @@ Mỗi F1 có sai số khoảng **±0,04**, tức gần bằng cả khoảng chê
 
 **Kết luận nào đứng vững, kết luận nào không:**
 - E0 < E1 < E3, và E2 < E3: CI **không chồng nhau**, nên chắc chắn. Khoảng cách E0 → E1 (+0,200) gấp khoảng 5 lần nửa độ rộng CI.
-- **E1 < E2: chưa kết luận được.** CI chồng nhau (0,295–0,380 và 0,249–0,322). Chênh lệch 0,051 nhỏ hơn khoảng dao động.
+- **E1 < E2: so CI riêng lẻ thì chưa kết luận được** (0,249–0,322 và 0,295–0,380 chồng nhau). Kiểm định ghép cặp thì cho thấy có khác biệt (bảng dưới).
 - **F1 từng lớp còn kém chắc chắn hơn**, vì mỗi lớp chỉ có 121 (pothole), 299 (crack) hoặc 163 (manhole) box. Ví dụ pothole E1 → E2 (0,175 → 0,205) chỉ là thêm 7 TP, và tôi không coi đó là bằng chứng.
 
 **Vì sao thực tế còn bất định hơn con số CI.**
-1. *Ảnh không độc lập.* 311 ảnh test chỉ đến từ **3 phiên quay**, tức 3 đoạn đường (Câu 6). Bootstrap theo ảnh giả định 311 mẫu độc lập, nên **đánh giá thấp** độ bất định. Nếu một phiên quay có ánh sáng dễ, cả trăm ảnh cùng dễ. Bootstrap theo phiên (chỉ có 3 đơn vị) sẽ cho CI rộng hơn nhiều; nghĩa là kết luận chỉ nên mở rộng sang "những con đường giống 3 đoạn này".
-2. *Một seed huấn luyện.* CI chỉ phản ánh dao động do mẫu test, không phản ánh dao động do khởi tạo LoRA, dropout hay thứ tự dữ liệu. Chạy lại E1 với seed khác có thể dịch F1 vài phần trăm.
-3. *Chồng CI là quy tắc bảo thủ.* Vì các setup được chấm trên *cùng* 311 ảnh, một kiểm định **ghép cặp** (bootstrap hiệu F1 trên cùng mẫu ảnh rút ra) sẽ nhạy hơn. CI chồng nhau như E1–E2 không có nghĩa "không khác nhau", chỉ là "dữ liệu này chưa đủ để nói".
+1. *Ảnh không độc lập, và test bị một phiên chi phối.* 311 ảnh test chỉ đến từ **3 phiên quay**, phân bố rất lệch: `vlc-2025-02-18-23` có **213 ảnh (68%)**, `vlc-2025-02-19-17` có 83 ảnh, `num-4` chỉ có 15 ảnh. Bootstrap theo ảnh giả định 311 mẫu độc lập, nên **đánh giá thấp** độ bất định thật. F1 theo từng phiên (ô 7b):
 
-**Hệ quả với cách tôi kết luận.** Tôi chỉ khẳng định những chênh lệch lớn hơn khoảng 0,08 F1 mà CI tách hẳn (E0 → E1, E2 → E3). Mọi chênh lệch dưới khoảng 0,05 (E1 → E2, hầu hết so sánh theo lớp, và các biến thể E4 nếu chênh ít) tôi báo cáo là "xu hướng", không phải kết quả.
+| | num-4 (15 ảnh) | 02-18-23 (213 ảnh) | 02-19-17 (83 ảnh) |
+|---|---|---|---|
+| E0 | 0,000 | 0,101 | 0,064 |
+| E1 | 0,318 | 0,307 | 0,235 |
+| E2 | **0,553** | 0,329 | 0,326 |
+| E3 | 0,444 | **0,438** | **0,451** |
+
+E3 hơn E2 rõ ở hai phiên lớn (+0,11 và +0,13) nhưng **thua ở phiên num-4** (0,444 so với 0,553). Với chỉ 15 ảnh thì đây có thể là nhiễu, nhưng nó cho thấy thứ hạng có thể đổi theo con đường. Kết luận "E3 tốt nhất" thực chất chủ yếu dựa trên một đoạn đường (02-18-23). Muốn khẳng định cho đường mới, cần test có nhiều phiên hơn.
+2. *Một seed huấn luyện.* CI chỉ phản ánh dao động do mẫu test, không phản ánh dao động do khởi tạo LoRA, dropout hay thứ tự dữ liệu. Chạy lại E1 với seed khác có thể dịch F1 vài phần trăm.
+3. *Chồng CI là quy tắc bảo thủ.* Các setup được chấm trên *cùng* 311 ảnh: ảnh khó với E1 thì cũng khó với E2. So hai CI riêng lẻ là bỏ qua tương quan này. Ở ô 7b, tôi chạy **bootstrap ghép cặp**: mỗi lần rút cùng một tập 311 ảnh cho cả hai setup rồi tính *hiệu* F1, lặp 2.000 lần:
+
+| So sánh | ΔF1 | CI95 của ΔF1 | P(Δ ≤ 0) |
+|---|---|---|---|
+| E1 − E0 | +0,200 | [+0,162, +0,238] | 0,000 |
+| **E2 − E1** | **+0,052** | **[+0,015, +0,089]** | **0,003** |
+| E3 − E2 | +0,105 | [+0,064, +0,146] | 0,000 |
+| E3 − E1 | +0,156 | [+0,114, +0,200] | 0,000 |
+
+Khi ghép cặp, phần dao động chung (độ khó của từng ảnh) triệt tiêu, nên CI của hiệu chỉ rộng khoảng ±0,04, thay vì phải so hai khoảng ±0,04 với nhau. Nhờ vậy E2 > E1 trở thành có ý nghĩa. Bài học: "CI chồng nhau" **không có nghĩa** "không khác nhau".
+
+**Hệ quả với cách tôi kết luận.** Tôi tin chắc E0 < E1 < E3 và E2 < E3: hiệu lớn, CI ghép cặp xa 0, và đúng ở các phiên lớn. E1 < E2 có ý nghĩa theo kiểm định ghép cặp, nhưng hiệu nhỏ (+0,05), lại chịu hai nguồn bất định chưa đo (ảnh tương quan theo phiên, một seed), nên tôi chỉ gọi đó là "cải thiện nhỏ". Mọi so sánh theo lớp và E4 tôi đều đọc kèm CI ghép cặp, không chỉ nhìn F1.
 
 ### Câu 9 — Phân tích lỗi theo lớp: lớp nào kém nhất và vì sao (kích thước box, số mẫu, ngữ nghĩa)? Kèm ảnh minh hoạ.
 
@@ -190,7 +208,16 @@ Số liệu theo lớp của setup tốt nhất (E3) trên test, cùng đặc đ
 
 **Crack khó vì ranh giới mơ hồ, không phải vì nhỏ.** Box crack lớn nhất (1,42%), nhiều mẫu nhất (1.750), nhưng F1 chỉ 0,361 với FP cao nhất (173). Một vết nứt dài có thể được gán nhãn thành 1 box dài hoặc 3 box ngắn, tuỳ người gán. Ở E0, model vẽ một box phủ cả mặt đường (Câu 2). Sau finetune, model học được quy ước "chia đoạn", nhưng cách chia của nó vẫn khác người gán nhãn, nên IoU với từng đoạn dưới 0,5: vừa FP vừa FN dù vết nứt được tìm thấy. Ngoài ra, mảng vá, vệt nước, bóng cây trên mặt đường cũng trông giống vết nứt.
 
-**Ảnh minh hoạ.** `report/figures/e3_examples.jpg` (sinh bởi ô 7b). Mỗi ảnh có box thật (xanh lá) và box dự đoán của E3 (đỏ = sai, IoU < 0,5 hoặc sai lớp; vàng = đúng). Có 6 ảnh gồm: dự đoán đúng nhiều nhất, pothole bị bỏ sót, crack bị chia khác nhãn, và FP trên mặt đường không có hư hại.
+**Ảnh minh hoạ** (`report/figures/e3_examples.jpg`, sinh bởi ô 7b; xanh lá = box thật, vàng = dự đoán đúng IoU ≥ 0,5 cùng lớp, đỏ = dự đoán sai):
+
+![E3: 6 ví dụ dự đoán đúng/sai trên test](report/figures/e3_examples.jpg)
+
+1. `…18-23h10m48s405`: TP 3/3. Một crack dọc, một manhole, một pothole đều khớp.
+2. `…19-17h04m47s362`: TP 3/3. Ba ổ gà nhỏ nằm sát nhau vẫn được tách đúng từng cái.
+3. `…19-17h03m28s017`, **pothole bị bỏ sót**: TP 0, FP 2, FN 5. Năm ổ gà chỉ khoảng 15–20 px ở xa. Model đặt 2 box *đúng vùng* nhưng lệch vài pixel, IoU < 0,5, nên vừa FP vừa FN. Đây là minh hoạ trực tiếp cho giới hạn "1 token ảnh ≈ 32 px" ở trên.
+4. `…18-23h24m39s634`, **crack chia đoạn khác nhãn**: TP 0, FP 3, FN 4. Bên trái, nhãn chia vết nứt thành 2 box liền nhau, còn model vẽ 1 box dài phủ cả hai. Bên phải, nhãn có 2 box lồng nhau, model vẽ 1 box lớn. Model *thấy* vết nứt, nhưng cách cắt đoạn khác người gán nhãn.
+5. `…18-23h25m48s850`, **nhiều FP nhất**: TP 0, FP 5, FN 1. Nhãn chỉ có 1 box cho cả vùng mặt đường hư hỏng; model chia thành nhiều box crack/pothole nhỏ hơn, và thêm một box crack lớn ở mép trái.
+6. `…18-23h13m50s113`, **manhole**: TP 2/2. Nắp cống có hình dạng rõ, box khớp tốt.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
 <điền>
