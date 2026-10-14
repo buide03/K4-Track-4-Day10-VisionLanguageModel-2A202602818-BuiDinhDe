@@ -9,7 +9,8 @@ Họ tên: Bùi Đình Đề · MSSV: 2A202602818
 | E1 | LoRA LLM | 33.030.144 | 6,88 | 50,63 | 0,286 | 0,249–0,322 | 1,21 | 0,175 | 0,218 | 0,546 |
 | E2 | + projector | 142.135.296 | 8,60 | 51,31 | 0,337 | 0,295–0,380 | 1,17 | 0,205 | 0,272 | 0,600 |
 | E3 | + LoRA ViT | 148.426.752 | 8,79 | 60,39 | 0,442 | 0,398–0,488 | 0,83 | 0,347 | 0,361 | 0,678 |
-| E4 | (ghi biến và giá trị) | | | | | | | | | |
+| E4 | `data_size` = 0.1 (142 ảnh train; còn lại y hệt E3) | 148.426.752 | 8,43 | 57,08 | 0,305 | 0,271–0,342 | 1,45 | 0,205 | 0,224 | 0,601 |
+| E4 | `data_size` = 1.0 (1.422 ảnh train; = chính E3) | 148.426.752 | 8,79 | 60,39 | 0,442 | 0,398–0,488 | 0,83 | 0,347 | 0,361 | 0,678 |
 
 ## 10 câu hỏi (trả lời bằng **số của bạn**, không chép lại tài liệu)
 
@@ -220,8 +221,51 @@ Số liệu theo lớp của setup tốt nhất (E3) trên test, cùng đặc đ
 6. `…18-23h13m50s113`, **manhole**: TP 2/2. Nắp cống có hình dạng rõ, box khớp tốt.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
-<điền>
+
+**Biến được đổi: `data_size`**, tức tỉ lệ ảnh train, với hai giá trị **10%** và **100%**. Mốc so sánh là setup tốt nhất **E3** (LoRA LLM + LoRA ViT + projector fp32). Bản 10% gồm 142 ảnh, rút ngẫu nhiên với seed 42 từ 1.422 ảnh train. Bản 100% chính là E3: GUIDE cho phép một giá trị trùng setup gốc, và tôi chấm lại cùng output của E3 dưới tên `e4_data_size_1.0`. Mọi thứ khác giữ nguyên: r = 16, alpha = 32, lr 2e-4, **cùng 300 bước** với batch hiệu dụng 8, cùng seed, cùng prompt và thang 0–1000. Ô 8a so `run.json` của hai bản và chỉ cho chạy tiếp khi khác nhau duy nhất ở `fraction` và `n_train_images`. Tôi cố ý **giữ nguyên số bước**, tức cùng lượng tính toán: nếu giảm số bước theo tỉ lệ dữ liệu thì sẽ đổi hai biến cùng lúc.
+
+| data_size | Ảnh train | Số lần mỗi ảnh được thấy | F1 | CI95 | P / R | FP/ảnh | pothole | crack | manhole | Loss 10 bước cuối | VRAM | Phút |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | 142 | ≈ 17 | 0,305 | 0,271–0,342 | 0,292 / 0,319 | **1,45** | 0,205 | 0,224 | 0,601 | **0,008** | 8,43 | 57,1 |
+| 1.0 | 1.422 | ≈ 1,7 | **0,442** | 0,398–0,488 | 0,480 / 0,410 | 0,83 | 0,347 | 0,361 | 0,678 | 0,458 | 8,79 | 60,4 |
+
+**Kết quả.** Giảm còn 10% dữ liệu làm F1 giảm **0,137**. Bootstrap ghép cặp trên cùng 311 ảnh cho hiệu 100% − 10% = **+0,137, CI95 [+0,097, +0,177], P(Δ ≤ 0) = 0,000**, và hai CI riêng lẻ cũng không chồng nhau (0,342 < 0,398). Chênh lệch nhất quán ở **cả 3 lớp** và **cả 3 phiên quay test**: 0,316 → 0,444; 0,292 → 0,438; 0,332 → 0,451. Manhole bị ảnh hưởng ít nhất (0,601 → 0,678): hình dạng rõ nên học được từ ít ví dụ. Pothole và crack mất nhiều nhất. Dù vậy, 142 ảnh vẫn đủ để vượt xa zero-shot (10% − E0 = +0,219, CI95 [+0,182, +0,258]).
+
+**Học thuộc (`report/figures/e4_loss.png`).** Với 142 ảnh × 300 bước, mỗi ảnh được thấy khoảng 17 lần. Loss huấn luyện của bản 10% rơi về **0,008**, gần như thuộc lòng đáp án, trong khi bản 100% dừng ở 0,458. Loss thấp hơn nhưng test kém hơn: precision giảm từ 0,480 xuống 0,292, và **FP/ảnh tăng từ 0,83 lên 1,45**. Model "nhìn thấy" lại những mẫu hư hại đã thuộc ở chỗ không có. Đây là ví dụ rõ rằng loss huấn luyện không phải thước đo chất lượng.
+
+**Một so sánh đáng chú ý.** E3 chỉ với 10% dữ liệu (0,305) ngang với E1 dùng đủ 100% dữ liệu (0,286) và E2 (0,337); các CI chồng nhau, nên đây chỉ là xu hướng. Nói cách khác, mở ViT cho học bù lại được phần lớn lợi ích của việc có gấp 10 lần dữ liệu khi chỉ finetune LLM.
+
+**Kết luận có đáng tin không?**
+- *Hướng và độ lớn: đáng tin.* Hiệu +0,137 gấp khoảng 3 lần nửa độ rộng CI ghép cặp (±0,04), và đúng ở mọi phiên quay, mọi lớp.
+- *Giới hạn:*
+  1. Chỉ có **một tập con 10%** và **một seed**. Một tập 142 ảnh khác (vd. rơi vào ít phiên hơn) có thể cho F1 khác vài phần trăm, và dao động này chưa được đo.
+  2. Chỉ có **hai điểm** trên đường cong dữ liệu. Tôi không biết 30% hay 50% đã đủ chưa, cũng không biết thêm dữ liệu nữa có còn giúp không. Loss của bản 100% vẫn đang giảm ở bước 300, nên 1,7 vòng dữ liệu có thể còn chưa đủ.
+  3. Test bị phiên `02-18-23` chiếm 68% ảnh (Câu 8), nên "tốt hơn" được hiểu là trên những con đường giống 3 phiên này.
+  4. Số bước giữ nguyên, nên kết quả trả lời câu hỏi "cùng ngân sách tính toán, ít dữ liệu thì sao". Với 10% dữ liệu mà dừng sớm hơn (ít học thuộc hơn) thì F1 có thể nhích lên.
+
+  Kết luận tôi tin được: *với cùng lượng tính toán, 10× dữ liệu giúp rõ rệt, và ít dữ liệu dẫn tới học thuộc cùng bịa box*.
 
 ## Nhìn lại
 
-<điền: điều bạn chưa hiểu, lỗi dữ liệu hoặc mô hình bạn gặp mà công cụ chấm chưa bắt được>
+**Lỗi tôi gặp mà công cụ chấm không bắt được.** Cả bốn lỗi đều cho ra số "hợp lệ", chỉ bị phát hiện nhờ tôi tự thêm kiểm tra:
+1. **ViT bị lượng tử hoá dù đã cấu hình bỏ qua.** Với transformers 5.19, `llm_int8_skip_modules=["visual", ...]` như GUIDE không khớp tên `model.visual.*` (so khớp từ đầu chuỗi), nên 104 lớp Linear của ViT thành 4-bit. E0/E1 vẫn chạy bình thường; chỉ E2/E3 sai, và rất khó đoán nguyên nhân. `score.py` không thấy gì vì đầu ra vẫn hợp lệ. Tôi sửa thành `model.visual` và thêm `assert` sau mỗi lần nạp model.
+2. **Môi trường Colab:** `torchao 0.10` cài sẵn khiến `peft 0.21.2` báo `ImportError` khi gắn LoRA. Lab không dùng torchao nên tôi gỡ đi.
+3. **Số đo VRAM bị đội lên:** biến vòng lặp còn giữ `lm_head` của model cũ (khoảng 0,8 GB), làm VRAM của E0 hiện 4,29 GB. Với E1–E3, `peak_vram_gb` được đo sau `reset_peak_memory_stats()` trong một model mới nạp, nên không bị ảnh hưởng. Nhưng nếu đo cẩu thả, `meta` sẽ sai mà `check_submission.py` vẫn PASS (nó chỉ kiểm tra số dương).
+4. **Rủi ro E2/E3 ≈ E1:** `peft.save_pretrained` không lưu projector. Tôi lưu riêng `projector.pt`, và khi nạp lại thì kiểm tra trọng số projector thực sự khác bản gốc.
+
+**Về dữ liệu và cách đánh giá:**
+- Test 311 ảnh chỉ từ 3 phiên, trong đó một phiên chiếm 68%. CI bootstrap theo ảnh giả định ảnh độc lập nên lạc quan hơn thực tế; xếp hạng E2/E3 còn đảo ngược ở phiên nhỏ `num-4`.
+- So hai CI riêng lẻ thì bảo thủ: E1 → E2 trông "không khác", nhưng bootstrap ghép cặp cho thấy có khác biệt (P = 0,003).
+- Quy ước gán nhãn crack (chia vết nứt thành từng đoạn) không nhất quán, nên một dự đoán thấy đúng vết nứt vẫn bị tính là FP + FN.
+- Pothole điển hình chỉ khoảng 30 px, xấp xỉ một token ảnh 32 px, nên ngưỡng IoU 0,5 rất khắt khe với lớp này.
+- Model gốc (E0) hay rơi vào vòng lặp sinh lặp lại một box đến khi bị cắt ở 256 token. Học `<|im_end|>` trong phần có loss đã đưa `parse_valid_rate` lên 0,997–1,000.
+
+**Điều tôi chưa hiểu hết:**
+- Vì sao E3 thua E2 ở phiên `num-4`: do nhiễu (chỉ 15 ảnh) hay do điều kiện đường khác?
+- Trong 109M tham số projector, `merger` và `deepstack_merger_list` mỗi phần đóng góp bao nhiêu (tôi chỉ mở cả hai cùng lúc)?
+- Lượng tử hoá NF4 của LLM có làm giảm độ chính xác toạ độ không?
+- 300 bước đã đủ chưa: loss của E3 vẫn đang giảm ở cuối.
+
+Để trả lời các câu này cần thêm seed, thêm phiên test, và tách riêng từng biến.
+
+**Vận hành.** Colab miễn phí bị ngắt qua đêm (máy tự cập nhật Windows). Vòng huấn luyện của tôi lưu checkpoint (LoRA, projector, optimizer, scheduler, scaler) lên Drive mỗi 100 bước, và suy luận ghi tiếp từ ảnh dang dở. Nhờ vậy không phải chạy lại phần đã xong; tôi chỉ cần chạy nốt phần suy luận E2/E3 vào sáng hôm sau.
