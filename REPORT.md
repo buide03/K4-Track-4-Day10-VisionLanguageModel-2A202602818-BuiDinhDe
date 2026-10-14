@@ -62,7 +62,7 @@ Nắp cống bị bỏ qua hoàn toàn, còn box crack nằm sai chỗ (IoU = 0)
 
 **Về 22 JSON hỏng.** Cả 22 đều **bị cắt giữa chừng** (chưa đóng `]`). Ô phân tích cũng đếm được 20 ảnh **lặp lại cùng một box**. Model rơi vào vòng lặp sinh mãi một box cho đến khi chạm `max_new_tokens` = 256. Trong khi đó, đáp án đúng dài nhất trên test chỉ 196 token, nên đây là lỗi của model chứ không phải do giới hạn quá chặt.
 
-**Kết luận.** Model gốc *biết* hư hại nằm ở nửa dưới ảnh (y ≥ 276) và nhận ra được nắp cống. Nhưng nó không biết **quy ước của bộ nhãn này**: liệt kê từng vật thể, chia vết nứt thành đoạn, box ôm rộng bao nhiêu. Đó đúng là thứ finetune cần dạy. Mốc để so sánh: E1 phải đạt F1 ≥ 0,186.
+**Kết luận.** Model gốc *biết* hư hại nằm ở nửa dưới ảnh (y ≥ 276) và nhận ra được nắp cống. Nhưng nó không biết **quy ước của bộ nhãn này**: liệt kê từng vật thể, chia vết nứt thành đoạn, box ôm rộng bao nhiêu. Đó đúng là thứ finetune cần dạy. Mốc rubric là E1 phải đạt F1 ≥ 0,086 + 0,10 = 0,186; kết quả E1 đạt **0,286** (+0,200), và `parse_valid_rate` tăng từ 0,929 lên 0,997.
 
 ### Câu 3 — Thang 0–1000: nếu chấm output theo pixel (hoặc ngược lại) thì F1 ra sao và vì sao? Bạn đã kiểm chứng điều này thế nào?
 
@@ -79,7 +79,9 @@ Cùng một bộ box đúng tuyệt đối, chỉ cần đọc sai thang là F1 
 
 **Vì sao.** Khi đáp án ở thang 0–1000 bị đọc như pixel, trọng tài chia x cho 640 và y cho 360 rồi nhân 1000. Kết quả là box bị **kéo giãn và đẩy xa gốc toạ độ**: ×1,56 theo chiều ngang, ×2,78 theo chiều dọc. Box thật ở giữa ảnh, khoảng y = 500, bị đẩy ra ngoài khung (y ≈ 1390). Box dự đoán và box thật không còn chồng nhau, IoU = 0 < 0,5, nên không có TP nào. Chiều ngược lại cũng vậy: box bị co về phía góc trên trái. Lỗi này nguy hiểm vì JSON vẫn **hợp lệ** (`parse_valid_rate` = 1), chỉ F1 sụp. Nhìn riêng độ hợp lệ của output sẽ không phát hiện ra.
 
-**Round-trip.** Tôi đổi nhãn YOLO → JSON 0–1000 → `parse_output` của trọng tài → pixel trên toàn bộ 4.737 box. Sai số lớn nhất là **0,32 px**, đúng bằng sai số làm tròn lý thuyết 640/1000/2. Vẽ chồng lên ảnh (`report/figures/cp2_roundtrip.jpg`) thấy box quy ngược khít với box gốc. Mean IoU 0,988 (thay vì 1,0) cho thấy nhãn gốc được vẽ trên lưới pixel nguyên, và làm tròn sang lưới 0–1000 làm lệch nhẹ các box nhỏ. Mức lệch này vẫn xa ngưỡng 0,5.
+**Round-trip.** Tôi đổi nhãn YOLO → JSON 0–1000 → `parse_output` của trọng tài → pixel trên toàn bộ 4.737 box. Sai số lớn nhất là **0,32 px**, đúng bằng sai số làm tròn lý thuyết 640/1000/2. Vẽ chồng box gốc và box quy ngược lên ảnh (ô 2b của notebook), hai box khít nhau. Mean IoU 0,988 (thay vì 1,0) cho thấy nhãn gốc được vẽ trên lưới pixel nguyên, và làm tròn sang lưới 0–1000 làm lệch nhẹ các box nhỏ. Mức lệch này vẫn xa ngưỡng 0,5.
+
+**Kiểm chứng trên output thật của model.** Tôi chấm lại output E0 với cả hai thang: `--coord norm1000` cho F1 = 0,086, còn `--coord pixel` cho F1 = **0,000**. Toạ độ y của E0 đi tới 1000, vượt chiều cao 360 px. Vậy model gốc đã dùng đúng thang 0–1000, và nếu chấm nhầm thang thì ngay cả phần nó làm đúng cũng mất sạch. Tất cả bằng chứng E0–E4 đều được chấm với `norm1000`, khớp với nhãn huấn luyện và prompt.
 
 **Vì sao Qwen3-VL dùng 0–1000 chứ không dùng pixel.** Qwen3-VL đổi kích thước ảnh động trước khi đưa vào ViT (patch 16 px, gộp 2×2), nên "pixel" mà model nhìn thấy phụ thuộc độ phân giải đầu vào. Toạ độ tương đối 0–1000 thì không đổi dù ảnh 640×360 hay 1920×1080. Ngoài ra, dữ liệu grounding lúc tiền huấn luyện dùng thang này, nên giữ đúng thang là tận dụng được kiến thức sẵn có của model thay vì bắt model học lại.
 
@@ -101,7 +103,7 @@ Cùng một bộ box đúng tuyệt đối, chỉ cần đọc sai thang là F1 
 2. *Loss "giảm đẹp" nhưng vô nghĩa.* 139 token chữ của prompt giống hệt nhau ở mọi ví dụ, nên model thuộc lòng rất nhanh. Còn 220 token ảnh thì nhãn luôn là `<|image_pad|>`, đoán đúng là việc tầm thường. Đường loss giảm nhanh, tạo cảm giác model đang học, trong khi F1 grounding hầu như không đổi. Đây là kiểu lỗi đánh lừa người theo dõi loss.
 3. *Học sai hành vi.* Model bị dạy để "viết tiếp" phần câu hỏi và chuỗi `<|image_pad|>`, vốn là các vị trí mà đặc trưng ảnh được chèn vào thay cho embedding chữ. Điều này làm nhiễu đúng phần LLM đọc ảnh, và có thể khiến model sinh ra văn bản kiểu prompt thay vì JSON.
 
-**Vì sao phải giữ `<|im_end|>` trong phần có loss.** Ở E0, 22/311 output bị cắt vì model lặp một box đến khi chạm 256 token. Học token `<|im_end|>` ngay sau dấu `]` là cách dạy model **dừng đúng lúc**. Đây là điều tôi kỳ vọng thấy qua `parse_valid_rate` của E1 (rubric yêu cầu ≥ 0,95).
+**Vì sao phải giữ `<|im_end|>` trong phần có loss.** Ở E0, 22/311 output bị cắt vì model lặp một box đến khi chạm 256 token. Học token `<|im_end|>` ngay sau dấu `]` là cách dạy model **dừng đúng lúc**. Kết quả xác nhận điều này: `parse_valid_rate` tăng từ 0,929 (E0) lên **0,997** (E1, chỉ 1/311 output hỏng) và **1,000** (E2, E3, E4). Đáp án test dài nhất chỉ 196 token, nên model không còn chạm giới hạn 256 token.
 
 ### Câu 5 — Vì sao không thể huấn luyện đầy đủ projector nếu ViT bị lượng tử hoá 4-bit, và bạn đã xử lý thế nào? Vì sao projector phải ở float32?
 
@@ -232,6 +234,8 @@ Số liệu theo lớp của setup tốt nhất (E3) trên test, cùng đặc đ
 **Kết quả.** Giảm còn 10% dữ liệu làm F1 giảm **0,137**. Bootstrap ghép cặp trên cùng 311 ảnh cho hiệu 100% − 10% = **+0,137, CI95 [+0,097, +0,177], P(Δ ≤ 0) = 0,000**, và hai CI riêng lẻ cũng không chồng nhau (0,342 < 0,398). Chênh lệch nhất quán ở **cả 3 lớp** và **cả 3 phiên quay test**: 0,316 → 0,444; 0,292 → 0,438; 0,332 → 0,451. Manhole bị ảnh hưởng ít nhất (0,601 → 0,678): hình dạng rõ nên học được từ ít ví dụ. Pothole và crack mất nhiều nhất. Dù vậy, 142 ảnh vẫn đủ để vượt xa zero-shot (10% − E0 = +0,219, CI95 [+0,182, +0,258]).
 
 **Học thuộc (`report/figures/e4_loss.png`).** Với 142 ảnh × 300 bước, mỗi ảnh được thấy khoảng 17 lần. Loss huấn luyện của bản 10% rơi về **0,008**, gần như thuộc lòng đáp án, trong khi bản 100% dừng ở 0,458. Loss thấp hơn nhưng test kém hơn: precision giảm từ 0,480 xuống 0,292, và **FP/ảnh tăng từ 0,83 lên 1,45**. Model "nhìn thấy" lại những mẫu hư hại đã thuộc ở chỗ không có. Đây là ví dụ rõ rằng loss huấn luyện không phải thước đo chất lượng.
+
+![E4: loss huấn luyện 10% so với 100% dữ liệu](report/figures/e4_loss.png)
 
 **Một so sánh đáng chú ý.** E3 chỉ với 10% dữ liệu (0,305) ngang với E1 dùng đủ 100% dữ liệu (0,286) và E2 (0,337); các CI chồng nhau, nên đây chỉ là xu hướng. Nói cách khác, mở ViT cho học bù lại được phần lớn lợi ích của việc có gấp 10 lần dữ liệu khi chỉ finetune LLM.
 
