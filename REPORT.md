@@ -103,7 +103,17 @@ Cùng một bộ box đúng tuyệt đối, chỉ cần đọc sai thang là F1 
 **Vì sao phải giữ `<|im_end|>` trong phần có loss.** Ở E0, 22/311 output bị cắt vì model lặp một box đến khi chạm 256 token. Học token `<|im_end|>` ngay sau dấu `]` là cách dạy model **dừng đúng lúc**. Đây là điều tôi kỳ vọng thấy qua `parse_valid_rate` của E1 (rubric yêu cầu ≥ 0,95).
 
 ### Câu 5 — Vì sao không thể huấn luyện đầy đủ projector nếu ViT bị lượng tử hoá 4-bit, và bạn đã xử lý thế nào? Vì sao projector phải ở float32?
-<điền>
+
+**Vì sao không huấn luyện đầy đủ được khi bị lượng tử hoá.** Projector (`visual.merger`, `visual.deepstack_merger_list`) nằm *bên trong* module `visual`. Nếu `visual` bị bitsandbytes lượng tử hoá, mỗi `nn.Linear` thành `Linear4bit`. Trọng số khi đó là `Params4bit` kiểu **uint8** đã nén (2 giá trị NF4 trong 1 byte, kèm hệ số scale theo khối). Tensor số nguyên không có gradient, nên không thể bật `requires_grad`, và optimizer không có gì để cập nhật. Cách duy nhất là gắn adapter (LoRA) lên trên, nhưng đó không còn là "huấn luyện đầy đủ" 109M tham số như E2/E3 yêu cầu. Kể cả nếu giải nén ra, cập nhật rồi nén lại, thì mọi bước cập nhật nhỏ hơn khoảng cách giữa hai mức NF4 (chỉ có 16 mức) sẽ bị làm tròn mất.
+
+**Cách tôi xử lý, và một lỗi tôi đã gặp.** Theo GUIDE, tôi dùng `llm_int8_skip_modules=["visual", "lm_head"]`. Nhưng ô kiểm tra của tôi in ra **104 `Linear4bit` (uint8) trong `visual`**: ViT vẫn bị lượng tử hoá. Đọc mã nguồn transformers 5.19 (`quantizers_utils.should_convert_module`), tôi thấy tên module chỉ được so khớp từ **đầu chuỗi** (`re.match`) hoặc theo **đuôi**. Tên thật là `model.visual.blocks.0.attn.qkv`, không bắt đầu bằng `visual`, nên không khớp; `lm_head` khớp vì tên đúng bằng `lm_head`. Tôi sửa thành `['model.visual', 'lm_head']`, và từ đó ô nạp model luôn `assert` rằng cả 104 `Linear` của ViT là fp16, còn 252 `Linear` của LLM là `Linear4bit`. Không có bước kiểm tra này, E0/E1 vẫn chạy bình thường, và lỗi chỉ lộ ra (rất khó đoán nguyên nhân) ở E2/E3.
+
+**Vì sao projector phải ở float32.** Tôi huấn luyện bằng autocast fp16: phép nhân ma trận chạy ở fp16, nhưng **bản trọng số gốc mà optimizer cập nhật là fp32**. Có ba lý do:
+1. *Cập nhật bị làm tròn mất.* fp16 chỉ có 10 bit phần định trị. Với một trọng số cỡ 0,02, bước nhỏ nhất biểu diễn được là 2⁻¹⁶ ≈ 1,5·10⁻⁵. Bước cập nhật của AdamW xấp xỉ lr; khi lr của lịch cosine giảm dần về 0 ở cuối (dưới khoảng 10⁻⁵), cộng vào trọng số fp16 sẽ **không làm thay đổi gì**. Projector được huấn luyện *đầy đủ*, nên mọi trọng số đều chịu vấn đề này.
+2. *Moment thứ hai của Adam bị tràn dưới.* v ≈ g². Với gradient cỡ 10⁻⁴, g² = 10⁻⁸ nhỏ hơn số dương nhỏ nhất của fp16 (≈ 6·10⁻⁸), nên v về 0, và bước m/√v bị khuếch đại sai.
+3. *GradScaler yêu cầu fp32.* `scaler.unscale_` báo lỗi khi gặp gradient fp16. Vì vậy `apply_setup` của tôi đưa **mọi** tham số huấn luyện về fp32 (cả LoRA và projector), và kiểm tra lại: "mọi tham số huấn luyện fp32: True" cho E1/E2/E3.
+
+**Cái giá đo được.** 109,1M tham số projector ở fp32 cần 0,44 GB trọng số + 0,44 GB gradient + 0,87 GB cho hai moment của Adam, tổng ≈ 1,75 GB. VRAM đỉnh đo được của E2 là 8,60 GB, so với E1 là 6,88 GB, tức **+1,72 GB**, khớp với ước tính. Khi suy luận, tôi nạp lại projector đã huấn luyện vào model fp16 (ép về fp16) và kiểm tra trọng số thực sự khác bản gốc. Bước này cần vì `peft.save_pretrained` chỉ lưu LoRA, nên projector phải được lưu riêng (`projector.pt`).
 
 ### Câu 6 — Split theo phiên quay: vì sao chia ngẫu nhiên sẽ cho F1 cao giả? Số ảnh và số box từng lớp ở mỗi split là bao nhiêu?
 
@@ -122,13 +132,65 @@ Kiểm tra rò rỉ: số phiên chung giữa train–val, train–test, val–t
 **Cái giá của việc chia theo phiên.** Không kiểm soát được phân bố lớp. Val chỉ có 66 pothole so với 470 crack, nên tôi chỉ dùng val để gỡ lỗi, không dùng để so sánh setup. Thêm nữa, test chỉ gồm **3 phiên**, nên 311 ảnh không phải 311 mẫu độc lập: các frame trong cùng phiên tương quan mạnh. Vì vậy CI95 tính theo từng ảnh có thể hẹp hơn độ bất định thật (xem Câu 8).
 
 ### Câu 7 — So sánh E1/E2/E3: mở projector và LoRA trên ViT có đáng không (F1, CI95, VRAM, thời gian)?
-<điền>
+
+Cả ba setup có cùng dữ liệu, cùng 300 bước, batch hiệu dụng 8, lr 2e-4, seed 42, và chạy trên cùng một T4:
+
+| | F1 | CI95 | P / R | TP / FP / FN | FP/ảnh | Tham số huấn luyện | VRAM đỉnh | Phút | Loss 10 bước cuối |
+|---|---|---|---|---|---|---|---|---|---|
+| E1 | 0,286 | 0,249–0,322 | 0,298 / 0,274 | 160 / 377 / 423 | 1,21 | 33,0M | 6,88 GB | 50,6 | 0,555 |
+| E2 | 0,337 | 0,295–0,380 | 0,346 / 0,329 | 192 / 363 / 391 | 1,17 | 142,1M | 8,60 GB | 51,3 | 0,509 |
+| E3 | **0,442** | **0,398–0,488** | **0,480 / 0,410** | 239 / 259 / 344 | **0,83** | 148,4M | 8,79 GB | 60,4 | 0,458 |
+
+**Mở projector (E1 → E2): có lợi nhưng chưa chắc chắn.** F1 tăng 0,051 (thêm 32 TP), nhưng hai CI95 **chồng nhau** (E2 thấp nhất 0,295 < E1 cao nhất 0,322). Với 311 ảnh test, tôi không khẳng định được projector giúp thật. Cái giá: gấp 4,3 lần số tham số huấn luyện (+109M) và **+1,72 GB VRAM**, nhưng thời gian gần như không đổi (+0,7 phút). Lý do thời gian gần như không đổi: gradient chỉ cần đi qua projector, không phải đi ngược vào ViT.
+
+**Thêm LoRA cho ViT (E2 → E3): đáng nhất.** F1 tăng 0,105, và CI95 **tách hẳn** (E3 thấp nhất 0,398 > E2 cao nhất 0,380). Cùng lúc precision tăng từ 0,346 lên 0,480 và FP/ảnh giảm từ 1,17 xuống 0,83: model vừa tìm được nhiều hơn vừa bịa ít hơn. Cái giá rất nhỏ: +6,3M tham số, +0,19 GB VRAM, và **+9,1 phút (+18%)**. Thời gian tăng vì giờ phải lan truyền ngược qua 24 block của ViT (gradient checkpointing tính lại activation).
+
+**Cách tôi hiểu.** E1 và E2 chỉ thay đổi cách LLM *đọc*, hoặc cách projector *chiếu*, các đặc trưng mà ViT đông cứng đã trích ra. Nếu ViT gốc không giữ đủ chi tiết cho những vật thể chỉ khoảng 30×30 pixel (ổ gà, nắp cống), thì không lớp nào phía sau khôi phục lại được. Chỉ E3 cho phép ViT *thay đổi đặc trưng nó trích ra*. Lớp hưởng lợi nhiều nhất cũng là lớp nhỏ nhất: pothole tăng từ 0,205 lên 0,347 (+69%), so với crack tăng từ 0,272 lên 0,361 và manhole từ 0,600 lên 0,678.
+
+**Kết luận: E3 đáng đồng tiền nhất.** E3 so với E1 cho thêm 0,156 F1 (CI tách hẳn) với giá +1,91 GB VRAM (vẫn chỉ dùng 8,79/15,6 GB của T4) và +10 phút. Hạn chế: mỗi setup chỉ chạy **một seed**, nên tôi chưa đo được độ dao động do huấn luyện; CI95 ở đây chỉ phản ánh dao động do mẫu test.
 
 ### Câu 8 — Tập test có 311 ảnh: khoảng tin cậy rộng thế nào, và điều đó giới hạn kết luận so sánh các setup ra sao?
-<điền>
+
+**CI95 được tính thế nào.** `score.py` tính bằng bootstrap: lấy mẫu có hoàn lại 311 *ảnh* (giữ nguyên TP/FP/FN của từng ảnh), tính lại F1 micro 1.000 lần, rồi lấy phân vị 2,5% và 97,5%.
+
+| | F1 | CI95 | Độ rộng | ≈ ± |
+|---|---|---|---|---|
+| E0 | 0,086 | 0,060–0,114 | 0,054 | ±0,027 |
+| E1 | 0,286 | 0,249–0,322 | 0,073 | ±0,037 |
+| E2 | 0,337 | 0,295–0,380 | 0,085 | ±0,043 |
+| E3 | 0,442 | 0,398–0,488 | 0,090 | ±0,045 |
+
+Mỗi F1 có sai số khoảng **±0,04**, tức gần bằng cả khoảng chênh giữa hai setup liền kề. CI rộng dần theo F1 vì gần F1 = 0,5 thì F1 dao động mạnh nhất theo việc ảnh nào được rút.
+
+**Kết luận nào đứng vững, kết luận nào không:**
+- E0 < E1 < E3, và E2 < E3: CI **không chồng nhau**, nên chắc chắn. Khoảng cách E0 → E1 (+0,200) gấp khoảng 5 lần nửa độ rộng CI.
+- **E1 < E2: chưa kết luận được.** CI chồng nhau (0,295–0,380 và 0,249–0,322). Chênh lệch 0,051 nhỏ hơn khoảng dao động.
+- **F1 từng lớp còn kém chắc chắn hơn**, vì mỗi lớp chỉ có 121 (pothole), 299 (crack) hoặc 163 (manhole) box. Ví dụ pothole E1 → E2 (0,175 → 0,205) chỉ là thêm 7 TP, và tôi không coi đó là bằng chứng.
+
+**Vì sao thực tế còn bất định hơn con số CI.**
+1. *Ảnh không độc lập.* 311 ảnh test chỉ đến từ **3 phiên quay**, tức 3 đoạn đường (Câu 6). Bootstrap theo ảnh giả định 311 mẫu độc lập, nên **đánh giá thấp** độ bất định. Nếu một phiên quay có ánh sáng dễ, cả trăm ảnh cùng dễ. Bootstrap theo phiên (chỉ có 3 đơn vị) sẽ cho CI rộng hơn nhiều; nghĩa là kết luận chỉ nên mở rộng sang "những con đường giống 3 đoạn này".
+2. *Một seed huấn luyện.* CI chỉ phản ánh dao động do mẫu test, không phản ánh dao động do khởi tạo LoRA, dropout hay thứ tự dữ liệu. Chạy lại E1 với seed khác có thể dịch F1 vài phần trăm.
+3. *Chồng CI là quy tắc bảo thủ.* Vì các setup được chấm trên *cùng* 311 ảnh, một kiểm định **ghép cặp** (bootstrap hiệu F1 trên cùng mẫu ảnh rút ra) sẽ nhạy hơn. CI chồng nhau như E1–E2 không có nghĩa "không khác nhau", chỉ là "dữ liệu này chưa đủ để nói".
+
+**Hệ quả với cách tôi kết luận.** Tôi chỉ khẳng định những chênh lệch lớn hơn khoảng 0,08 F1 mà CI tách hẳn (E0 → E1, E2 → E3). Mọi chênh lệch dưới khoảng 0,05 (E1 → E2, hầu hết so sánh theo lớp, và các biến thể E4 nếu chênh ít) tôi báo cáo là "xu hướng", không phải kết quả.
 
 ### Câu 9 — Phân tích lỗi theo lớp: lớp nào kém nhất và vì sao (kích thước box, số mẫu, ngữ nghĩa)? Kèm ảnh minh hoạ.
-<điền>
+
+Số liệu theo lớp của setup tốt nhất (E3) trên test, cùng đặc điểm dữ liệu đo ở CP1:
+
+| Lớp | F1 E0 → E1 → E2 → E3 | P / R (E3) | TP / FP / FN (E3) | Box train | Diện tích trung vị | ≈ Cạnh box (px) |
+|---|---|---|---|---|---|---|
+| pothole | 0,124 → 0,175 → 0,205 → **0,347** | 0,39 / 0,31 | 38 / 60 / 83 | 1.074 | **0,38%** | ≈ 30 |
+| crack | 0,026 → 0,218 → 0,272 → 0,361 | 0,38 / 0,35 | 104 / 173 / 195 | 1.750 | 1,42% | ≈ 57 |
+| manhole | 0,193 → 0,546 → 0,600 → **0,678** | 0,79 / 0,60 | 97 / 26 / 66 | **691** | 0,46% | ≈ 33 |
+
+**Pothole kém nhất (F1 0,347), và nguyên nhân chính là kích thước.** Box pothole trung vị chỉ chiếm 0,38% khung hình, tức khoảng 875 px², cạnh cỡ 30 px trên ảnh 640×360. Qwen3-VL cắt patch 16 px rồi gộp 2×2, nên **mỗi token ảnh phủ 32×32 px**: một ổ gà điển hình chỉ nằm gọn trong **khoảng 1 token**. Model phải định vị chính xác tới mức dưới một token. Lệch 10 px trên một box 30×30 đã làm IoU tụt xuống khoảng 0,5, nên một dự đoán "đúng chỗ" vẫn bị tính là cả FP lẫn FN. Đây cũng là lý do E3 (LoRA trên ViT, cho phép thay đổi đặc trưng ở mức patch) giúp pothole nhiều nhất: +69% so với E2.
+
+**Số mẫu không giải thích được thứ hạng.** Manhole có **ít box train nhất** (691, so với 1.074 của pothole) nhưng tốt nhất. Box manhole cũng nhỏ (0,46%) nhưng **ngữ nghĩa rõ ràng**: nắp cống tròn, bằng kim loại, viền rõ, hình dạng gần như giống hệt nhau giữa các ảnh. Model gốc cũng đã nhận ra được (F1 E0 0,193, cao nhất). Precision manhole ở E3 là 0,79: khi model nói "nắp cống" thì gần như luôn đúng; lỗi chủ yếu là bỏ sót (FN 66).
+
+**Crack khó vì ranh giới mơ hồ, không phải vì nhỏ.** Box crack lớn nhất (1,42%), nhiều mẫu nhất (1.750), nhưng F1 chỉ 0,361 với FP cao nhất (173). Một vết nứt dài có thể được gán nhãn thành 1 box dài hoặc 3 box ngắn, tuỳ người gán. Ở E0, model vẽ một box phủ cả mặt đường (Câu 2). Sau finetune, model học được quy ước "chia đoạn", nhưng cách chia của nó vẫn khác người gán nhãn, nên IoU với từng đoạn dưới 0,5: vừa FP vừa FN dù vết nứt được tìm thấy. Ngoài ra, mảng vá, vệt nước, bóng cây trên mặt đường cũng trông giống vết nứt.
+
+**Ảnh minh hoạ.** `report/figures/e3_examples.jpg` (sinh bởi ô 7b). Mỗi ảnh có box thật (xanh lá) và box dự đoán của E3 (đỏ = sai, IoU < 0,5 hoặc sai lớp; vàng = đúng). Có 6 ảnh gồm: dự đoán đúng nhiều nhất, pothole bị bỏ sót, crack bị chia khác nhãn, và FP trên mặt đường không có hư hại.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
 <điền>
